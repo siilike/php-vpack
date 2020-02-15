@@ -1,0 +1,7 @@
+ARG_ENABLE('vpack', 'vpack support', 'no');
+
+if (PHP_VPACK != 'no') {
+	AC_DEFINE('HAVE_VPACK', 1, 'vpack support enabled');
+
+	EXTENSION('vpack', 'vpack.c', null, '/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1');
+}

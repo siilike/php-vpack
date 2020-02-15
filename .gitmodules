@@ -1,0 +1,4 @@
+[submodule "velocypack"]
+	path = velocypack
+	url = https://github.com/arangodb/velocypack.git
+	branch = master
