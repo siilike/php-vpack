@@ -51,9 +51,9 @@ void serializeHashTable(char* name, size_t nameLen, uint64_t tag, zval* zmapper,
 			}
 			else
 			{
-				int len = snprintf(NULL, 0, "%d", key_index);
+				int len = snprintf(NULL, 0, "%ld", key_index);
 				char k[len+1];
-				snprintf(k, len+1, "%d", key_index);
+				snprintf(k, len+1, "%ld", key_index);
 
 				serialize(k, len, 0, zmapper, b, val);
 			}
@@ -61,7 +61,7 @@ void serializeHashTable(char* name, size_t nameLen, uint64_t tag, zval* zmapper,
 	}
 	else
 	{
-		b->openArray();
+		b->openArray(true);
 
 		ZEND_HASH_FOREACH_VAL(input, val)
 		{
@@ -116,22 +116,30 @@ void serialize(char* name, size_t nameLen, uint64_t tag, zval* zmapper, VpackBui
 			if(instanceof_function(Z_OBJCE_P(input), vpack_serializable_ce))
 			{
 				zval ret;
-				zval tagret;
+				zval target;
 
-				zend_call_method_with_0_params(input, NULL, NULL, "getTagId", &tagret);
+#if PHP_VERSION_ID >= 80000
+				zend_call_method_with_0_params(Z_OBJ_P(input), NULL, NULL, "getTagId", &target);
+#else
+				zend_call_method_with_0_params(input, NULL, NULL, "getTagId", &target);
+#endif
 
-				if(Z_ISUNDEF(tagret))
+				if(Z_ISUNDEF(target))
 				{
 					return;
 				}
 
-				otag = Z_LVAL(tagret);
+				otag = Z_LVAL(target);
 
 				LambdaVpackSerializable ls([&](VpackBuilder& _unused)
 				{
+#if PHP_VERSION_ID >= 80000
+					zend_call_method_with_2_params(Z_OBJ_P(input), NULL, NULL, "toVPack", &ret, &intern->builder, zmapper);
+#else
 					zend_call_method_with_2_params(input, NULL, NULL, "toVPack", &ret, &intern->builder, zmapper);
+#endif
 
-					if(Z_ISUNDEF(ret) || Z_ISUNDEF(tagret))
+					if(Z_ISUNDEF(ret) || Z_ISUNDEF(target))
 					{
 						return;
 					}
@@ -140,7 +148,7 @@ void serialize(char* name, size_t nameLen, uint64_t tag, zval* zmapper, VpackBui
 				vpack_builder_add_serializable(b, name, nameLen, otag, VpackSerialize(ls));
 
 				zval_ptr_dtor(&ret);
-				zval_ptr_dtor(&tagret);
+				zval_ptr_dtor(&target);
 			}
 			else
 			{
@@ -181,7 +189,11 @@ void serialize(char* name, size_t nameLen, uint64_t tag, zval* zmapper, VpackBui
 
 						php_error_docref(NULL, E_WARNING, "No serializer for class '%s' found, writing public keys", ZSTR_VAL(Z_OBJCE_P(input)->name));
 
+#if PHP_VERSION_ID >= 80000
+						serializeHashTable(nullptr, 0, 0, zmapper, b, Z_OBJ_HT_P(input)->get_properties(Z_OBJ_P(input)));
+#else
 						serializeHashTable(nullptr, 0, 0, zmapper, b, Z_OBJ_HT_P(input)->get_properties(input));
+#endif
 					}
 				});
 
@@ -215,6 +227,9 @@ void deserialize(zval* ret, zval* zs, const VpackSlice &s, zval* zmapper)
 		case VpackValueType::UInt:
 		case VpackValueType::SmallInt:
 			ZVAL_LONG(ret, s.getInt());
+			break;
+		case VpackValueType::Double:
+			ZVAL_DOUBLE(ret, s.getDouble());
 			break;
 		case VpackValueType::String:
 		{
@@ -332,7 +347,7 @@ void deserialize(zval* ret, zval* zs, const VpackSlice &s, zval* zmapper)
 				return;
 			}
 
-			php_error_docref(NULL, E_WARNING, "Unsupported tag '%s'", s.getFirstTag());
+			php_error_docref(NULL, E_WARNING, "Unsupported tag '%lu'", s.getFirstTag());
 			ZVAL_NULL(ret);
 			break;
 		}
@@ -368,10 +383,22 @@ PHP_METHOD(TypeMapper, __construct)
 	array_init_size(&intern->serializers, 25);
 	array_init_size(&intern->deserializers, 25);
 
+#if PHP_VERSION_ID >= 80000
+	zend_update_property(mapper_ce, Z_OBJ_P(getThis()), "tagToClassMap", sizeof("tagToClassMap")-1, &intern->tagToClassMap);
+	zend_update_property(mapper_ce, Z_OBJ_P(getThis()), "classToTagMap", sizeof("classToTagMap")-1, &intern->classToTagMap);
+	zend_update_property(mapper_ce, Z_OBJ_P(getThis()), "serializers", sizeof("serializers")-1, &intern->serializers);
+	zend_update_property(mapper_ce, Z_OBJ_P(getThis()), "deserializers", sizeof("deserializers")-1, &intern->deserializers);
+#else
 	zend_update_property(mapper_ce, getThis(), "tagToClassMap", sizeof("tagToClassMap")-1, &intern->tagToClassMap);
 	zend_update_property(mapper_ce, getThis(), "classToTagMap", sizeof("classToTagMap")-1, &intern->classToTagMap);
 	zend_update_property(mapper_ce, getThis(), "serializers", sizeof("serializers")-1, &intern->serializers);
 	zend_update_property(mapper_ce, getThis(), "deserializers", sizeof("deserializers")-1, &intern->deserializers);
+#endif
+
+	zval_ptr_dtor(&intern->tagToClassMap);
+	zval_ptr_dtor(&intern->classToTagMap);
+	zval_ptr_dtor(&intern->serializers);
+	zval_ptr_dtor(&intern->deserializers);
 
 	object_init_ex(&intern->builder, builder_ce);
 
@@ -383,7 +410,7 @@ PHP_METHOD(TypeMapper, __construct)
 	ZVAL_STRING(&fname, "__construct");
 	ZVAL_COPY(&params[0], getThis());
 
-	result = call_user_function_ex(NULL, &intern->builder, &fname, &retval, 1, params, 0, NULL);
+	result = call_user_function(NULL, &intern->builder, &fname, &retval, 1, params);
 
 	zval_ptr_dtor(&retval);
 	zval_ptr_dtor(&fname);
@@ -435,7 +462,7 @@ PHP_METHOD(TypeMapper, registerSerializer)
 
 	intern = Z_MAPPER_OBJ_P(getThis());
 
-	if(!zend_is_callable(callable, IS_CALLABLE_CHECK_NO_ACCESS, NULL))
+	if(!zend_is_callable(callable, 0, NULL))
 	{
 		zend_throw_exception_ex(vpack_exception_ce, 0, "Second argument needs to be a valid callback");
 	}
@@ -463,7 +490,7 @@ PHP_METHOD(TypeMapper, registerDeserializer)
 
 	intern = Z_MAPPER_OBJ_P(getThis());
 
-	if(!zend_is_callable(callable, IS_CALLABLE_CHECK_NO_ACCESS, NULL))
+	if(!zend_is_callable(callable, 0, NULL))
 	{
 		zend_throw_exception_ex(vpack_exception_ce, 0, "Second argument needs to be a valid callback");
 	}
@@ -497,7 +524,7 @@ PHP_METHOD(TypeMapper, serialize)
 
 	VpackSlice s = builder->builder->slice();
 
-	RETURN_NEW_STR(zend_string_init((const char*) s.start(), s.byteSize(), 0))
+	RETURN_STRINGL((const char*) s.start(), s.byteSize());
 
 	VPACK_CATCH
 }
@@ -506,7 +533,6 @@ PHP_METHOD(TypeMapper, deserialize)
 {
 	VPACK_TRY
 
-	php_vpack_mapper_t* intern;
 	zval*               input;
 	zval                copy;
 	zval                ret;
@@ -515,8 +541,6 @@ PHP_METHOD(TypeMapper, deserialize)
 	{
 		return;
 	}
-
-	intern = Z_MAPPER_OBJ_P(getThis());
 
 	ZVAL_COPY(&copy, input);
 
@@ -533,10 +557,7 @@ PHP_METHOD(TypeMapper, deserialize)
 
 static zend_object* mapper_create_object(zend_class_entry* class_type)
 {
-	php_vpack_mapper_t* intern = NULL;
-
-	intern = (php_vpack_mapper_t*) ecalloc(1, sizeof(php_vpack_mapper_t) + zend_object_properties_size(class_type));
-//	intern = zend_object_alloc(sizeof(php_vpack_mapper_t), php_vpack_mapper_t);
+	php_vpack_mapper_t* intern = (php_vpack_mapper_t*) zend_object_alloc(sizeof(php_vpack_mapper_t), class_type);
 
 	zend_object_std_init(&intern->std, class_type);
 	object_properties_init(&intern->std, class_type);
@@ -550,31 +571,45 @@ static void mapper_free_object(zend_object* object)
 {
 	php_vpack_mapper_t* intern = Z_OBJ_MAPPER(object);
 
-	zend_object_std_dtor(&intern->std TSRMLS_CC);
+	zend_object_std_dtor(&intern->std);
 
 	zval_ptr_dtor(&intern->tagToClassMap);
 	zval_ptr_dtor(&intern->classToTagMap);
 	zval_ptr_dtor(&intern->serializers);
 	zval_ptr_dtor(&intern->deserializers);
 	zval_ptr_dtor(&intern->builder);
+
+	efree(intern);
 }
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_const, 0, 0, 0)
+ZEND_ARG_INFO(0, tagToClassMap)
+ZEND_ARG_INFO(0, classToTagMap)
+ZEND_ARG_INFO(0, serializers)
+ZEND_ARG_INFO(0, deserializers)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_register_mapping, 0, 0, 0)
+ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_register_mapping, 0, 0, 2)
+ZEND_ARG_INFO(0, key)
+ZEND_ARG_INFO(0, value)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_register_serializer, 0, 0, 0)
+ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_register_serializer, 0, 0, 2)
+ZEND_ARG_INFO(0, tag)
+ZEND_ARG_INFO(0, serializer)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_register_deserializer, 0, 0, 0)
+ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_register_deserializer, 0, 0, 2)
+ZEND_ARG_INFO(0, tag)
+ZEND_ARG_INFO(0, deserializer)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_register_serialize, 0, 0, 0)
+ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_serialize, 0, 0, 1)
+ZEND_ARG_INFO(0, serializer)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_register_deserialize, 0, 0, 0)
+ZEND_BEGIN_ARG_INFO_EX(vpack_mapper_deserialize, 0, 0, 1)
+ZEND_ARG_INFO(0, deserializer)
 ZEND_END_ARG_INFO()
 
 zend_function_entry mapper_methods[] =
@@ -583,8 +618,8 @@ zend_function_entry mapper_methods[] =
 	PHP_ME(TypeMapper, registerMapping, vpack_mapper_register_mapping, ZEND_ACC_PUBLIC)
 	PHP_ME(TypeMapper, registerSerializer, vpack_mapper_register_serializer, ZEND_ACC_PUBLIC)
 	PHP_ME(TypeMapper, registerDeserializer, vpack_mapper_register_deserializer, ZEND_ACC_PUBLIC)
-	PHP_ME(TypeMapper, serialize, vpack_mapper_register_serialize, ZEND_ACC_PUBLIC)
-	PHP_ME(TypeMapper, deserialize, vpack_mapper_register_deserialize, ZEND_ACC_PUBLIC)
+	PHP_ME(TypeMapper, serialize, vpack_mapper_serialize, ZEND_ACC_PUBLIC)
+	PHP_ME(TypeMapper, deserialize, vpack_mapper_deserialize, ZEND_ACC_PUBLIC)
 	PHP_FE_END
 };
 
@@ -594,7 +629,7 @@ void mapper_init_ce(INIT_FUNC_ARGS)
 	zval             tmp;
 
 	INIT_CLASS_ENTRY(ce, "VPack\\TypeMapper", mapper_methods);
-	mapper_ce = zend_register_internal_class(&ce TSRMLS_CC);
+	mapper_ce = zend_register_internal_class(&ce);
 	mapper_ce->create_object = mapper_create_object;
 
 	ZVAL_NULL(&tmp);

@@ -25,7 +25,7 @@ void inline vpack_register_interface_serializable(INIT_FUNC_ARGS)
 	INIT_NS_CLASS_ENTRY(ce, "VPack", "Serializable", vpack_serializable_me);
 	vpack_serializable_ce = zend_register_internal_interface(&ce);
 
-	zend_class_implements(vpack_serializable_ce TSRMLS_CC, 1, vpack_tagged_ce);
+	zend_class_implements(vpack_serializable_ce, 1, vpack_tagged_ce);
 }
 
 #endif

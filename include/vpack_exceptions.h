@@ -23,7 +23,7 @@ void inline vpack_register_exception(INIT_FUNC_ARGS)
 	INIT_NS_CLASS_ENTRY(ce, "VPack", "Exception", vpack_exception_me);
 	vpack_exception_ce = zend_register_internal_class_ex(&ce, zend_exception_get_default());
 
-	zend_class_implements(vpack_exception_ce TSRMLS_CC, 1, zend_ce_throwable);
+	zend_class_implements(vpack_exception_ce, 1, zend_ce_throwable);
 }
 
 #endif

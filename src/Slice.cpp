@@ -61,7 +61,10 @@ void new_slice_ref(zval *v, zval *r, long offset)
 	fci.retval = &ret;
 	fci.param_count = 2;
 	fci.params = &params[0];
-	fci.no_separation = (zend_bool) 0;
+
+#if PHP_VERSION_ID >= 80000
+	fci.named_params = 0;
+#endif
 
 	result = zend_call_function(&fci, NULL);
 
@@ -1074,7 +1077,6 @@ PHP_METHOD(Slice, hasKey)
 	php_vpack_slice_t* intern;
 	char*              key;
 	size_t             keyLen;
-	zval               ret;
 
 	if(zend_parse_parameters(ZEND_NUM_ARGS(), "s", &key, &keyLen) == FAILURE)
 	{
@@ -1282,7 +1284,7 @@ PHP_METHOD(Slice, getString)
 	VpackValueLength len;
 	const char* str = s.getString(len);
 
-	RETURN_NEW_STR(zend_string_init(str, len, 0))
+	RETURN_NEW_STR(zend_string_init(str, len, 0));
 
 	VPACK_CATCH
 }
@@ -1325,7 +1327,7 @@ PHP_METHOD(Slice, getBinary)
 	VpackValueLength len;
 	const char* val = (const char *) s.getBinary(len);
 
-	RETURN_NEW_STR(zend_string_init(val, len, 0))
+	RETURN_NEW_STR(zend_string_init(val, len, 0));
 
 	VPACK_CATCH
 }
@@ -1437,7 +1439,7 @@ PHP_METHOD(Slice, toHex)
 
 	std::string v = s.toHex();
 
-	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0))
+	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0));
 
 	VPACK_CATCH
 }
@@ -1459,7 +1461,7 @@ PHP_METHOD(Slice, toJson)
 
 	std::string v = s.toJson();
 
-	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0))
+	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0));
 
 	VPACK_CATCH
 }
@@ -1481,7 +1483,7 @@ PHP_METHOD(Slice, toString)
 
 	std::string v = s.toString();
 
-	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0))
+	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0));
 
 	VPACK_CATCH
 }
@@ -1503,7 +1505,7 @@ PHP_METHOD(Slice, __toString)
 
 	std::string v = s.toString();
 
-	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0))
+	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0));
 
 	VPACK_CATCH
 }
@@ -1534,13 +1536,19 @@ PHP_METHOD(Slice, getBCD)
 	VPACK_CATCH
 }
 
+#if PHP_VERSION_ID >= 80000
+	ZEND_METHOD(Slice, getIterator)
+	{
+		ZEND_PARSE_PARAMETERS_NONE();
+		zend_create_internal_iterator_zval(return_value, ZEND_THIS);
+	}
+#endif
 
 static zend_object* slice_create_object(zend_class_entry* class_type)
 {
 	php_vpack_slice_t* intern = NULL;
 
-	intern = (php_vpack_slice_t*) ecalloc(1, sizeof(php_vpack_slice_t) + zend_object_properties_size(class_type));
-//	intern = zend_object_alloc(sizeof(php_vpack_slice_t), php_vpack_slice_t);
+	intern = (php_vpack_slice_t*) zend_object_alloc(sizeof(php_vpack_slice_t), class_type);
 
 	zend_object_std_init(&intern->std, class_type);
 	object_properties_init(&intern->std, class_type);
@@ -1554,12 +1562,14 @@ static void slice_free_object(zend_object* object)
 {
 	php_vpack_slice_t* intern = Z_OBJ_SLICE(object);
 
-	zend_object_std_dtor(&intern->std TSRMLS_CC);
+	zend_object_std_dtor(&intern->std);
 
 	if(!Z_ISUNDEF(intern->startZval))
 	{
 		zval_ptr_dtor(&intern->startZval);
 	}
+
+	efree(intern);
 }
 
 static void slice_iterator_invalidate(zend_object_iterator *iter)
@@ -1767,33 +1777,44 @@ static zend_object_iterator* slice_get_iterator(zend_class_entry *ce, zval *obje
 
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_const, 0, 0, 1)
+ZEND_ARG_INFO(0, input)
+ZEND_ARG_INFO(0, offset)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_hastag, 0, 0, 1)
+ZEND_ARG_INFO(0, tag)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_istype, 0, 0, 1)
+ZEND_ARG_INFO(0, type)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_at, 0, 0, 1)
+ZEND_ARG_INFO(0, arg)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_keyat, 0, 0, 1)
+ZEND_ARG_INFO(0, arg)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_valueat, 0, 0, 1)
+ZEND_ARG_INFO(0, index)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_getnth, 0, 0, 1)
+ZEND_ARG_INFO(0, n)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_get, 0, 0, 1)
+ZEND_ARG_INFO(0, key)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_haskey, 0, 0, 1)
+ZEND_ARG_INFO(0, key)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_slice_binaryeq, 0, 0, 1)
+ZEND_ARG_INFO(0, object)
 ZEND_END_ARG_INFO()
 
 zend_function_entry slice_methods[] =
@@ -1865,6 +1886,11 @@ zend_function_entry slice_methods[] =
 	PHP_ME(Slice, toJson, vpack_arginfo_none, ZEND_ACC_PUBLIC)
 	PHP_ME(Slice, toString, vpack_arginfo_none, ZEND_ACC_PUBLIC)
 	PHP_ME(Slice, __toString, vpack_arginfo_none, ZEND_ACC_PUBLIC)
+
+#if PHP_VERSION_ID >= 80000
+	PHP_ME(Slice, getIterator, vpack_arginfo_none, ZEND_ACC_PUBLIC)
+#endif
+
 	PHP_FE_END
 };
 
@@ -1873,11 +1899,15 @@ void slice_init_ce(INIT_FUNC_ARGS)
 	zend_class_entry ce;
 
 	INIT_CLASS_ENTRY(ce, "VPack\\Slice", slice_methods);
-	slice_ce = zend_register_internal_class(&ce TSRMLS_CC);
+	slice_ce = zend_register_internal_class(&ce);
 	slice_ce->create_object = slice_create_object;
 	slice_ce->get_iterator = slice_get_iterator;
 
+#if PHP_VERSION_ID >= 80000
+	zend_class_implements(slice_ce, 1, zend_ce_aggregate);
+#else
 	zend_class_implements(slice_ce, 1, zend_ce_traversable);
+#endif
 
 	memcpy(&slice_handler, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	slice_handler.free_obj = slice_free_object;

@@ -94,8 +94,10 @@ if test "$PHP_VPACK" != "no"; then
   
   PHP_ADD_INCLUDE($VELOCYPACK_INCLUDE)
   PHP_ADD_INCLUDE(include)
-  
-  CXXFLAGS="-std=c++11"
+
+  CXXFLAGS="-Wall -std=c++11"
+  CFLAGS="-Wall -std=c++11"
+  CPPFLAGS="-Wall"
   LDFLAGS="-L$VELOCYPACK_LIBRARY_PATH -lvelocypack"
 
   PHP_REQUIRE_CXX()

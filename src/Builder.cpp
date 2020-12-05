@@ -94,7 +94,7 @@ PHP_METHOD(Builder, toString)
 
 	std::string v = s.toString();
 
-	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0))
+	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0));
 
 	VPACK_CATCH
 }
@@ -116,7 +116,7 @@ PHP_METHOD(Builder, toJson)
 
 	std::string v = s.toJson();
 
-	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0))
+	RETURN_NEW_STR(zend_string_init(v.c_str(), v.length(), 0));
 
 	VPACK_CATCH
 }
@@ -281,15 +281,16 @@ PHP_METHOD(Builder, openArray)
 	VPACK_TRY
 
 	php_vpack_builder_t* intern;
+	zend_bool            unindexed = false;
 
-	if(zend_parse_parameters_none() == FAILURE) // TODO unindexed
+	if(zend_parse_parameters(ZEND_NUM_ARGS(), "|b", &unindexed) == FAILURE)
 	{
 		return;
 	}
 
 	intern = Z_BUILDER_OBJ_P(getThis());
 
-	intern->builder->openArray();
+	intern->builder->openArray(unindexed);
 
 	VPACK_CATCH
 }
@@ -299,15 +300,16 @@ PHP_METHOD(Builder, openObject)
 	VPACK_TRY
 
 	php_vpack_builder_t* intern;
+	zend_bool            unindexed = false;
 
-	if(zend_parse_parameters_none() == FAILURE) // TODO unindexed
+	if(zend_parse_parameters(ZEND_NUM_ARGS(), "|b", &unindexed) == FAILURE)
 	{
 		return;
 	}
 
 	intern = Z_BUILDER_OBJ_P(getThis());
 
-	intern->builder->openObject();
+	intern->builder->openObject(unindexed);
 
 	VPACK_CATCH
 }
@@ -389,7 +391,6 @@ PHP_METHOD(Builder, hasKey)
 	php_vpack_builder_t* intern;
 	char*              key;
 	size_t             keyLen = 0;
-	zval               ret;
 
 	if(zend_parse_parameters(ZEND_NUM_ARGS(), "s", &key, &keyLen) == FAILURE)
 	{
@@ -438,8 +439,7 @@ static zend_object* builder_create_object(zend_class_entry* class_type)
 {
 	php_vpack_builder_t* intern = NULL;
 
-	intern = (php_vpack_builder_t*) ecalloc(1, sizeof(php_vpack_builder_t) + zend_object_properties_size(class_type));
-//	intern = zend_object_alloc(sizeof(php_vpack_builder_t), php_vpack_builder_t);
+	intern = (php_vpack_builder_t*) zend_object_alloc(sizeof(php_vpack_builder_t), class_type);
 
 	zend_object_std_init(&intern->std, class_type);
 	object_properties_init(&intern->std, class_type);
@@ -456,24 +456,41 @@ static void builder_free_object(zend_object* object)
 {
 	php_vpack_builder_t* intern = Z_OBJ_BUILDER(object);
 
-	zend_object_std_dtor(&intern->std TSRMLS_CC);
+	zend_object_std_dtor(&intern->std);
 
 	delete intern->buffer;
 	delete intern->builder;
 
 	zval_ptr_dtor(&intern->mapper);
+
+	efree(intern);
 }
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_builder_const, 0, 0, 1)
+ZEND_ARG_INFO(0, mapper)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_builder_reserve, 0, 0, 1)
+ZEND_ARG_INFO(0, length)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(vpack_builder_openarray, 0, 0, 0)
+	ZEND_ARG_INFO(0, unindexed)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(vpack_builder_openobject, 0, 0, 0)
+	ZEND_ARG_INFO(0, unindexed)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_builder_addobjval, 0, 0, 3)
+ZEND_ARG_INFO(0, key)
+ZEND_ARG_INFO(0, tag)
+ZEND_ARG_INFO(0, value)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(vpack_builder_addvalue, 0, 0, 2)
+ZEND_ARG_INFO(0, tag)
+ZEND_ARG_INFO(0, value)
 ZEND_END_ARG_INFO()
 
 zend_function_entry builder_methods[] =
@@ -486,8 +503,8 @@ zend_function_entry builder_methods[] =
 	PHP_ME(Builder, isClosed, vpack_arginfo_none, ZEND_ACC_PUBLIC)
 	PHP_ME(Builder, isOpenArray, vpack_arginfo_none, ZEND_ACC_PUBLIC)
 	PHP_ME(Builder, isOpenObject, vpack_arginfo_none, ZEND_ACC_PUBLIC)
-	PHP_ME(Builder, openArray, vpack_arginfo_none, ZEND_ACC_PUBLIC)
-	PHP_ME(Builder, openObject, vpack_arginfo_none, ZEND_ACC_PUBLIC)
+	PHP_ME(Builder, openArray, vpack_builder_openarray, ZEND_ACC_PUBLIC)
+	PHP_ME(Builder, openObject, vpack_builder_openobject, ZEND_ACC_PUBLIC)
 	PHP_ME(Builder, addObjectValue, vpack_builder_addobjval, ZEND_ACC_PUBLIC)
 	PHP_ME(Builder, addValue, vpack_builder_addvalue, ZEND_ACC_PUBLIC)
 	PHP_ME(Builder, close, vpack_arginfo_none, ZEND_ACC_PUBLIC)
@@ -499,7 +516,7 @@ void builder_init_ce(INIT_FUNC_ARGS)
 	zend_class_entry ce;
 
 	INIT_CLASS_ENTRY(ce, "VPack\\Builder", builder_methods);
-	builder_ce = zend_register_internal_class(&ce TSRMLS_CC);
+	builder_ce = zend_register_internal_class(&ce);
 	builder_ce->create_object = builder_create_object;
 
 	memcpy(&builder_handler, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
